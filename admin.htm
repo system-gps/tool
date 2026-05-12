@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>學生資料管理後台 - 授權安全版</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+    <style>
+        .sort-icon::after { content: ' ↕'; opacity: 0.3; font-size: 0.8em; }
+        .sort-active::after { opacity: 1; color: #2563eb; }
+        .sort-asc::after { content: ' ↑'; }
+        .sort-desc::after { content: ' ↓'; }
+        /* 預設隱藏主畫面，防閃爍 */
+        #main-app { display: none; }
+        #loading-screen { display: flex; }
+    </style>
+</head>
+<body class="bg-gray-50 p-4">
+
+    <div id="loading-screen" class="min-h-[80vh] flex-col items-center justify-center">
+        <div class="text-4xl mb-4">🔒</div>
+        <h2 class="text-xl font-bold text-gray-700">正在驗證身分與安全連線...</h2>
+        <p class="text-gray-500 mt-2">請於彈出的視窗登入授權的 Google 帳號</p>
+    </div>
+
+    <div id="main-app" class="max-w-[98%] mx-auto bg-white p-6 rounded-xl shadow-md">
+        
+        <div class="flex justify-between items-center mb-6 border-b pb-4">
+            <h1 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
+                <span>🎓 學生資料管理系統</span>
+                <span id="currentYearBadge" class="text-sm font-normal bg-blue-100 text-blue-700 px-2 py-1 rounded"></span>
+            </h1>
+            <div class="flex items-center gap-4">
+                <span id="currentUserEmail" class="text-sm text-gray-500 font-medium"></span>
+                <button onclick="logout()" class="bg-red-50 text-red-600 px-4 py-2 rounded-lg border border-red-200 hover:bg-red-100 transition shadow-sm">
+                    登出系統
+                </button>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            <div class="relative md:col-span-2">
+                <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-400">🔍</span>
+                <input type="text" id="searchInput" placeholder="搜尋姓名、註冊編號、電郵、班別..." 
+                       class="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
+            </div>
+
+            <div class="flex items-center gap-2">
+                <label class="whitespace-nowrap text-sm text-gray-600">學年：</label>
+                <select id="yearFilter" class="w-full border p-2 rounded-lg bg-white outline-none focus:border-blue-500"></select>
+            </div>
+
+            <div class="flex justify-end gap-2">
+                <input type="file" id="csvInput" accept=".csv" class="hidden" onchange="handleCSVUpload(event)">
+                <button onclick="document.getElementById('csvInput').click()" class="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200 border transition">
+                    📂 批次上載 CSV
+                </button>
+                <button onclick="openModal()" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition shadow">
+                    ＋ 新增學生
+                </button>
+            </div>
+        </div>
+
+        <div class="bg-white border rounded-lg overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr class="text-gray-500 text-xs uppercase tracking-wider font-medium">
+                        <th onclick="setSort('class_name')" class="p-3 text-left cursor-pointer hover:bg-gray-100 sort-icon" id="th-class_name">班別</th>
+                        <th onclick="setSort('class_no')" class="p-3 text-left cursor-pointer hover:bg-gray-100 sort-icon" id="th-class_no">學號</th>
+                        <th onclick="setSort('name_zh')" class="p-3 text-left cursor-pointer hover:bg-gray-100 sort-icon" id="th-name_zh">中文姓名</th>
+                        <th onclick="setSort('name_en')" class="p-3 text-left cursor-pointer hover:bg-gray-100 sort-icon" id="th-name_en">英文姓名</th>
+                        <th class="p-3 text-left">性別</th>
+                        <th onclick="setSort('dob')" class="p-3 text-left cursor-pointer hover:bg-gray-100 sort-icon" id="th-dob">出生日期</th>
+                        <th onclick="setSort('reg_no')" class="p-3 text-left cursor-pointer hover:bg-gray-100 sort-icon" id="th-reg_no">註冊編號</th>
+                        <th onclick="setSort('email')" class="p-3 text-left cursor-pointer hover:bg-gray-100 sort-icon" id="th-email">電郵</th>
+                        <th class="p-3 text-center">操作</th>
+                    </tr>
+                </thead>
+                <tbody id="studentTableBody" class="divide-y divide-gray-100 text-sm">
+                    </tbody>
+            </table>
+        </div>
+
+        <div class="mt-4 flex flex-col md:flex-row justify-between items-center gap-4 text-sm text-gray-500">
+            <div>共 <span id="totalRecords" class="font-bold text-blue-600">0</span> 筆紀錄</div>
+            <div class="flex items-center gap-4">
+                <select id="pageSize" class="border rounded p-1">
+                    <option value="20">20 筆/頁</option>
+                    <option value="50">50 筆/頁</option>
+                    <option value="100">100 筆/頁</option>
+                </select>
+                <div class="flex gap-2">
+                    <button onclick="changePage(-1)" id="prevBtn" class="px-3 py-1 border rounded hover:bg-gray-100 disabled:opacity-30">上一頁</button>
+                    <button onclick="changePage(1)" id="nextBtn" class="px-3 py-1 border rounded hover:bg-gray-100 disabled:opacity-30">下一頁</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="addModal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex justify-center items-center z-50">
+        <div class="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md relative">
+            <h2 class="text-xl font-bold mb-4 text-gray-800 border-b pb-2">新增/更新學生紀錄</h2>
+            <form id="addForm" class="space-y-4">
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600">學年 *</label>
+                        <input type="text" id="m_year" required class="w-full border p-2 rounded focus:ring focus:ring-blue-200 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600">註冊編號 *</label>
+                        <input type="text" id="m_reg_no" required class="w-full border p-2 rounded focus:ring focus:ring-blue-200 outline-none">
+                    </div>
+                </div>
+                
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600">班別 *</label>
+                        <input type="text" id="m_class" required placeholder="如: 1A" class="w-full border p-2 rounded focus:ring focus:ring-blue-200 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600">學號 *</label>
+                        <input type="number" id="m_no" required class="w-full border p-2 rounded focus:ring focus:ring-blue-200 outline-none">
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600">中文姓名 *</label>
+                        <input type="text" id="m_name_zh" required class="w-full border p-2 rounded focus:ring focus:ring-blue-200 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600">英文姓名</label>
+                        <input type="text" id="m_name_en" class="w-full border p-2 rounded focus:ring focus:ring-blue-200 outline-none">
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600">性別</label>
+                        <select id="m_gender" class="w-full border p-2 rounded focus:ring focus:ring-blue-200 outline-none">
+                            <option value="">請選擇</option>
+                            <option value="M">男 (M)</option>
+                            <option value="F">女 (F)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600">出生日期</label>
+                        <input type="text" id="m_dob" placeholder="YYYY-MM-DD" class="w-full border p-2 rounded focus:ring focus:ring-blue-200 outline-none">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-medium text-gray-600">電郵</label>
+                    <input type="email" id="m_email" class="w-full border p-2 rounded focus:ring focus:ring-blue-200 outline-none">
+                </div>
+
+                <div class="flex justify-end gap-3 mt-6 pt-4 border-t">
+                    <button type="button" onclick="closeModal()" class="px-4 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition">取消</button>
+                    <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition">儲存資料</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getFirestore, collection, query, where, doc, deleteDoc, setDoc, writeBatch, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyD56VzhRgVVUE4WrJuj2pf6OOAx6VrETjw",
+            authDomain: "school-quiz-system-cb6b7.firebaseapp.com",
+            projectId: "school-quiz-system-cb6b7",
+            storageBucket: "school-quiz-system-cb6b7.firebasestorage.app",
+            messagingSenderId: "333454596917",
+            appId: "1:333454596917:web:b9d7d80ff10e62c1238a7c"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+        const provider = new GoogleAuthProvider();
+
+        // ==========================================
+        // 🔒 1. 權限與白名單設定 (請務必修改這裡)
+        // ==========================================
+        const ALLOWED_EMAILS = [
+            "manager1@gmail.com", 
+            "manager2@gmail.com", 
+            "your-email@gmail.com"  // 請替換為你真實的 Google 帳號電郵
+        ];
+
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                if (ALLOWED_EMAILS.includes(user.email)) {
+                    // 驗證成功：顯示介面、更新使用者資訊、啟動資料庫監聽
+                    document.getElementById('loading-screen').style.display = 'none';
+                    document.getElementById('main-app').style.display = 'block';
+                    document.getElementById('currentUserEmail').innerText = `管理員：${user.email}`;
+                    startListening();
+                } else {
+                    // 登入者不在白名單
+                    alert(`權限不足：您的帳號 (${user.email}) 不在管理員白名單內。`);
+                    signOut(auth);
+                }
+            } else {
+                // 未登入：隱藏介面，彈出登入框
+                document.getElementById('loading-screen').style.display = 'flex';
+                document.getElementById('main-app').style.display = 'none';
+                signInWithPopup(auth, provider).catch(err => {
+                    console.error("登入失敗", err);
+                    alert("請登入您的 Google 帳號以進入系統。");
+                });
+            }
+        });
+
+        window.logout = () => {
+            signOut(auth).then(() => location.reload());
+        };
+
+        // ==========================================
+        // 📅 2. 學年與 UI 初始化
+        // ==========================================
+        function getAutoAcademicYear() {
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = now.getMonth() + 1;
+            return (month >= 9) ? `${year}-${year + 1}` : `${year - 1}-${year}`;
+        }
+        const defaultYear = getAutoAcademicYear();
+        const yearSelect = document.getElementById('yearFilter');
+        const startYear = parseInt(defaultYear.split('-')[0]) - 1;
+        for(let i=0; i<4; i++) {
+            const yStr = `${startYear+i}-${startYear+i+1}`;
+            const opt = new Option(yStr, yStr);
+            if(yStr === defaultYear) opt.selected = true;
+            yearSelect.add(opt);
+        }
+        document.getElementById('currentYearBadge').innerText = `預設學年: ${defaultYear}`;
+
+        // ==========================================
+        // 📊 3. 資料獲取與過濾邏輯
+        // ==========================================
+        let allStudents = [];
+        let filteredStudents = [];
+        let currentSort = { key: 'class_name', dir: 'asc' };
+        let currentPage = 1;
+        let pageSize = 20;
+
+        function startListening() {
+            const q = query(collection(db, "students"), where("academic_year", "==", yearSelect.value));
+            onSnapshot(q, (snapshot) => {
+                allStudents = snapshot.docs.map(doc => doc.data());
+                applyAllFilters();
+            }, (error) => {
+                console.error("讀取資料失敗，請確認 Firestore Rules 設定是否正確", error);
+            });
+        }
+
+        function applyAllFilters() {
+            const term = document.getElementById('searchInput').value.trim().toLowerCase();
+            
+            // 搜尋
+            filteredStudents = allStudents.filter(s => {
+                if (!term) return true;
+                const nameZh = (s.name_zh || "").toString().toLowerCase();
+                const nameEn = (s.name_en || "").toString().toLowerCase();
+                const regNo  = (s.reg_no || "").toString().toLowerCase();
+                const email  = (s.email || "").toString().toLowerCase();
+                const className = (s.class_name || "").toString().toLowerCase();
+                return nameZh.includes(term) || nameEn.includes(term) || regNo.includes(term) || email.includes(term) || className.includes(term);
+            });
+
+            // 複合排序
+            filteredStudents.sort((a, b) => {
+                let result = 0;
+                const key = currentSort.key;
+
+                if (key === 'class_name' || key === 'class_no') {
+                    result = (a.class_name || "").localeCompare(b.class_name || "");
+                    if (result === 0) result = (parseInt(a.class_no) || 0) - (parseInt(b.class_no) || 0);
+                } else {
+                    let valA = a[key] || ""; let valB = b[key] || "";
+                    if (typeof valA === 'string') valA = valA.toLowerCase();
+                    if (typeof valB === 'string') valB = valB.toLowerCase();
+                    if (valA < valB) result = -1; else if (valA > valB) result = 1;
+
+                    if (result === 0) {
+                        result = (a.class_name || "").localeCompare(b.class_name || "");
+                        if (result === 0) result = (parseInt(a.class_no) || 0) - (parseInt(b.class_no) || 0);
+                    }
+                }
+                return currentSort.dir === 'asc' ? result : result * -1;
+            });
+            renderTable();
+        }
+
+        function renderTable() {
+            const total = filteredStudents.length;
+            const start = (currentPage - 1) * pageSize;
+            const pageData = filteredStudents.slice(start, start + pageSize);
+
+            const tbody = document.getElementById('studentTableBody');
+            tbody.innerHTML = pageData.map(s => `
+                <tr class="hover:bg-blue-50 border-b border-gray-100">
+                    <td class="p-3 font-bold text-blue-800">${s.class_name}</td>
+                    <td class="p-3">${s.class_no}</td>
+                    <td class="p-3 font-medium text-gray-900">${s.name_zh}</td>
+                    <td class="p-3 text-gray-600">${s.name_en || '-'}</td>
+                    <td class="p-3">${s.gender || '-'}</td>
+                    <td class="p-3 text-xs text-gray-500">${s.dob || '-'}</td>
+                    <td class="p-3 text-xs">${s.reg_no}</td>
+                    <td class="p-3 text-xs text-blue-600">${s.email || '-'}</td>
+                    <td class="p-3 text-center">
+                        <button onclick="deleteStudent('${s.academic_year}', '${s.reg_no}')" class="text-red-400 hover:text-red-600 transition">刪除</button>
+                    </td>
+                </tr>
+            `).join('');
+
+            document.getElementById('totalRecords').innerText = total;
+            document.getElementById('prevBtn').disabled = currentPage === 1;
+            document.getElementById('nextBtn').disabled = start + pageSize >= total;
+
+            document.querySelectorAll('th').forEach(th => th.className = th.className.replace('sort-active sort-asc sort-desc', ''));
+            const th = document.getElementById(`th-${currentSort.key}`);
+            if(th) { th.classList.add('sort-active'); th.classList.add(currentSort.dir === 'asc' ? 'sort-asc' : 'sort-desc'); }
+        }
+
+        // ==========================================
+        // 🕹️ 4. 交互與操作功能
+        // ==========================================
+        window.setSort = (key) => {
+            currentSort.dir = (currentSort.key === key && currentSort.dir === 'asc') ? 'desc' : 'asc';
+            currentSort.key = key;
+            applyAllFilters();
+        };
+
+        window.changePage = (offset) => { currentPage += offset; renderTable(); };
+        document.getElementById('searchInput').oninput = () => { currentPage = 1; applyAllFilters(); };
+        yearSelect.onchange = () => { currentPage = 1; startListening(); };
+        document.getElementById('pageSize').onchange = (e) => { pageSize = parseInt(e.target.value); currentPage = 1; renderTable(); };
+
+        window.deleteStudent = async (year, regNo) => {
+            if (confirm(`確定刪除註冊編號 ${regNo} 的紀錄？`)) {
+                try { await deleteDoc(doc(db, "students", `${year}_${regNo}`)); } 
+                catch(e) { alert("刪除失敗，請檢查權限"); }
+            }
+        };
+
+        // ==========================================
+        // 🚀 5. 批次上載與 Modal 邏輯
+        // ==========================================
+        window.handleCSVUpload = async (event) => {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            Papa.parse(file, {
+                header: true,
+                skipEmptyLines: true,
+                transformHeader: (h) => h.trim(),
+                complete: async function(results) {
+                    const data = results.data;
+                    const requiredFields = ['學年', '註冊編號', '班別', '學號', '中文姓名'];
+
+                    for (let row of data) {
+                        for (let key in row) if (typeof row[key] === 'string') row[key] = row[key].trim();
+                        for (let field of requiredFields) {
+                            if (!row[field]) {
+                                alert(`❌ 驗證失敗：缺少必填欄位 [${field}] (註冊編號: ${row['註冊編號'] || '未知'})。上傳終止。`);
+                                document.getElementById('csvInput').value = ''; 
+                                return;
+                            }
+                        }
+                    }
+
+                    if (confirm(`✅ 即將上傳/更新 ${data.length} 筆資料，確定執行嗎？`)) {
+                        try {
+                            for (let i = 0; i < data.length; i += 400) {
+                                const chunk = data.slice(i, i + 400);
+                                const batch = writeBatch(db);
+                                
+                                chunk.forEach(s => {
+                                    const docRef = doc(db, "students", `${s['學年']}_${s['註冊編號']}`);
+                                    batch.set(docRef, {
+                                        academic_year: s['學年'],
+                                        reg_no: s['註冊編號'],
+                                        class_name: s['班別'],
+                                        class_no: parseInt(s['學號']) || 0,
+                                        name_zh: s['中文姓名'],
+                                        name_en: s['英文姓名'] || "",
+                                        gender: s['性別'] || "",
+                                        dob: s['出生日期'] || "",
+                                        email: s['電郵'] ? s['電郵'].toLowerCase() : "",
+                                        updated_at: new Date()
+                                    }, { merge: true });
+                                });
+                                await batch.commit();
+                            }
+                            alert("🎉 批次更新成功！");
+                        } catch (error) {
+                            alert("❌ 上傳失敗：" + error.message);
+                        }
+                    }
+                    document.getElementById('csvInput').value = ''; 
+                }
+            });
+        };
+
+        window.openModal = () => {
+            document.getElementById('m_year').value = yearSelect.value;
+            document.getElementById('addModal').classList.remove('hidden');
+        };
+
+        window.closeModal = () => {
+            document.getElementById('addForm').reset();
+            document.getElementById('addModal').classList.add('hidden');
+        };
+
+        document.getElementById('addForm').onsubmit = async (e) => {
+            e.preventDefault();
+            const year = document.getElementById('m_year').value.trim();
+            const regNo = document.getElementById('m_reg_no').value.trim();
+            const studentData = {
+                academic_year: year,
+                reg_no: regNo,
+                class_name: document.getElementById('m_class').value.trim(),
+                class_no: parseInt(document.getElementById('m_no').value),
+                name_zh: document.getElementById('m_name_zh').value.trim(),
+                name_en: document.getElementById('m_name_en').value.trim(),
+                gender: document.getElementById('m_gender').value,
+                dob: document.getElementById('m_dob').value.trim(),
+                email: document.getElementById('m_email').value.trim().toLowerCase(),
+                updated_at: new Date()
+            };
+
+            try {
+                await setDoc(doc(db, "students", `${year}_${regNo}`), studentData, { merge: true });
+                closeModal();
+            } catch (error) {
+                alert("❌ 儲存失敗: " + error.message);
+            }
+        };
+    </script>
+</body>
+</html>

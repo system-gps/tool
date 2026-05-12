@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>學生資料管理後台 - 授權安全版</title>
+    <title>學生資料管理後台</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
     <style>
@@ -11,17 +11,25 @@
         .sort-active::after { opacity: 1; color: #2563eb; }
         .sort-asc::after { content: ' ↑'; }
         .sort-desc::after { content: ' ↓'; }
-        /* 預設隱藏主畫面，防閃爍 */
+        
+        /* 預設隱藏主畫面與登入畫面，由 JS 控制顯示 */
         #main-app { display: none; }
-        #loading-screen { display: flex; }
+        #login-screen { display: none; }
     </style>
 </head>
 <body class="bg-gray-50 p-4">
 
-    <div id="loading-screen" class="min-h-[80vh] flex-col items-center justify-center">
-        <div class="text-4xl mb-4">🔒</div>
-        <h2 class="text-xl font-bold text-gray-700">正在驗證身分與安全連線...</h2>
-        <p class="text-gray-500 mt-2">請於彈出的視窗登入授權的 Google 帳號</p>
+    <div id="login-screen" class="min-h-[90vh] flex flex-col items-center justify-center">
+        <div class="bg-white p-8 rounded-2xl shadow-lg w-full max-w-md text-center border border-gray-100">
+            <div class="text-5xl mb-6">🎓</div>
+            <h1 class="text-3xl font-bold text-gray-800 mb-2">學生管理系統</h1>
+            <p class="text-gray-500 mb-8 text-sm">請使用已獲授權的帳號登入系統後台</p>
+            
+            <button onclick="loginWithGoogle()" class="w-full flex items-center justify-center gap-3 bg-white border border-gray-300 text-gray-700 px-6 py-3 rounded-xl hover:bg-gray-50 transition shadow-sm font-medium">
+                <img src="https://www.google.com/favicon.ico" alt="Google" class="w-5 h-5">
+                使用 Google 帳號登入
+            </button>
+        </div>
     </div>
 
     <div id="main-app" class="max-w-[98%] mx-auto bg-white p-6 rounded-xl shadow-md">
@@ -191,11 +199,19 @@
             "your-email@gmail.com"  // 請替換為你真實的 Google 帳號電郵
         ];
 
+        // 綁定手動登入功能至全域
+        window.loginWithGoogle = () => {
+            signInWithPopup(auth, provider).catch(err => {
+                console.error("登入失敗", err);
+                // 使用者關閉視窗或網路錯誤時不需特別處理，維持在登入畫面即可
+            });
+        };
+
         onAuthStateChanged(auth, (user) => {
             if (user) {
                 if (ALLOWED_EMAILS.includes(user.email)) {
-                    // 驗證成功：顯示介面、更新使用者資訊、啟動資料庫監聽
-                    document.getElementById('loading-screen').style.display = 'none';
+                    // 驗證成功：顯示主介面、隱藏登入畫面、啟動資料庫監聽
+                    document.getElementById('login-screen').style.display = 'none';
                     document.getElementById('main-app').style.display = 'block';
                     document.getElementById('currentUserEmail').innerText = `管理員：${user.email}`;
                     startListening();
@@ -205,13 +221,9 @@
                     signOut(auth);
                 }
             } else {
-                // 未登入：隱藏介面，彈出登入框
-                document.getElementById('loading-screen').style.display = 'flex';
+                // 未登入：顯示帶有按鈕的登入介面
+                document.getElementById('login-screen').style.display = 'flex';
                 document.getElementById('main-app').style.display = 'none';
-                signInWithPopup(auth, provider).catch(err => {
-                    console.error("登入失敗", err);
-                    alert("請登入您的 Google 帳號以進入系統。");
-                });
             }
         });
 

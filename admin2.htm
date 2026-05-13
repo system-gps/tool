@@ -108,7 +108,7 @@
 
     <div id="addModal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex justify-center items-center z-50">
         <div class="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md relative">
-            <h2 class="text-xl font-bold mb-4 text-gray-800 border-b pb-2">新增/更新學生紀錄</h2>
+            <h2 id="modalTitle" class="text-xl font-bold mb-4 text-gray-800 border-b pb-2">新增/更新學生紀錄</h2>
             <form id="addForm" class="space-y-4">
                 <div class="grid grid-cols-2 gap-4">
                     <div>
@@ -321,7 +321,7 @@
             renderTable();
         }
 
-        function renderTable() {
+       function renderTable() {
             const total = filteredStudents.length;
             const start = (currentPage - 1) * pageSize;
             const pageData = filteredStudents.slice(start, start + pageSize);
@@ -337,9 +337,10 @@
                     <td class="p-3 text-xs text-gray-500">${s.dob || '-'}</td>
                     <td class="p-3 text-xs">${s.reg_no}</td>
                     <td class="p-3 text-xs text-blue-600">${s.email || '-'}</td>
-                    <td class="p-3 text-center">
+                    <td class="p-3 text-center whitespace-nowrap">
                         ${currentUserRole === 'ADMIN' ? 
-                          `<button onclick="deleteStudent('${s.academic_year}', '${s.reg_no}')" class="text-red-400 hover:text-red-600 transition">刪除</button>` : 
+                          `<button onclick="editStudent('${s.academic_year}', '${s.reg_no}')" class="text-blue-500 hover:text-blue-700 transition mr-3 font-medium">修改</button>
+                           <button onclick="deleteStudent('${s.academic_year}', '${s.reg_no}')" class="text-red-400 hover:text-red-600 transition font-medium">刪除</button>` : 
                           `<span class="text-gray-300 cursor-not-allowed">無權限</span>`
                         }
                     </td>
@@ -371,14 +372,14 @@
 
         window.deleteStudent = async (year, regNo) => {
             if (currentUserRole !== 'ADMIN') return alert('權限不足');
-            if (confirm(`確定刪除註冊編號 ${regNo} 的紀錄？`)) {
+            if (confirm(`確定刪除註冊編號 ${regNo} 的紀錄？\n注意：此動作無法復原。`)) {
                 try { await deleteDoc(doc(db, "students", `${year}_${regNo}`)); } 
                 catch(e) { alert("刪除失敗，請檢查權限"); }
             }
         };
 
         // ==========================================
-        // 🚀 5. 批次上載與 Modal 邏輯
+        // 🚀 5. 批次上載與 Modal 邏輯 (包含新增/修改)
         // ==========================================
         window.handleCSVUpload = async (event) => {
             if (currentUserRole !== 'ADMIN') return alert('權限不足');
@@ -437,9 +438,48 @@
             });
         };
 
+        // 打開「新增」視窗
         window.openModal = () => {
             if (currentUserRole !== 'ADMIN') return alert('權限不足');
+            document.getElementById('addForm').reset();
+            
+            // 解除主鍵鎖定
+            document.getElementById('m_year').readOnly = false;
+            document.getElementById('m_reg_no').readOnly = false;
+            document.getElementById('m_year').classList.remove('bg-gray-100', 'cursor-not-allowed');
+            document.getElementById('m_reg_no').classList.remove('bg-gray-100', 'cursor-not-allowed');
+            
             document.getElementById('m_year').value = yearSelect.value;
+            document.getElementById('modalTitle').innerText = '＋ 新增學生紀錄';
+            document.getElementById('addModal').classList.remove('hidden');
+        };
+
+        // 打開「修改」視窗
+        window.editStudent = (year, regNo) => {
+            if (currentUserRole !== 'ADMIN') return alert('權限不足');
+            
+            // 從目前的資料陣列中找出該名學生
+            const student = allStudents.find(s => s.academic_year === year && s.reg_no === regNo);
+            if (!student) return alert('找不到該學生資料');
+
+            // 填入現有資料
+            document.getElementById('m_year').value = student.academic_year || '';
+            document.getElementById('m_reg_no').value = student.reg_no || '';
+            document.getElementById('m_class').value = student.class_name || '';
+            document.getElementById('m_no').value = student.class_no || '';
+            document.getElementById('m_name_zh').value = student.name_zh || '';
+            document.getElementById('m_name_en').value = student.name_en || '';
+            document.getElementById('m_gender').value = student.gender || '';
+            document.getElementById('m_dob').value = student.dob || '';
+            document.getElementById('m_email').value = student.email || '';
+
+            // 鎖定主鍵（學年與註冊編號不可修改，否則會變成新增另一筆）
+            document.getElementById('m_year').readOnly = true;
+            document.getElementById('m_reg_no').readOnly = true;
+            document.getElementById('m_year').classList.add('bg-gray-100', 'cursor-not-allowed');
+            document.getElementById('m_reg_no').classList.add('bg-gray-100', 'cursor-not-allowed');
+
+            document.getElementById('modalTitle').innerText = '✏️ 修改學生紀錄';
             document.getElementById('addModal').classList.remove('hidden');
         };
 
@@ -448,6 +488,7 @@
             document.getElementById('addModal').classList.add('hidden');
         };
 
+        // 提交表單 (新增與修改共用此邏輯)
         document.getElementById('addForm').onsubmit = async (e) => {
             e.preventDefault();
             if (currentUserRole !== 'ADMIN') return alert('權限不足');
@@ -456,7 +497,7 @@
             const studentData = {
                 academic_year: year,
                 reg_no: regNo,
-                class_name: document.getElementById('m_class').value.trim(),
+                class_name: document.getElementById('m_class').value.trim().toUpperCase(), // 自動轉大寫，如 1A
                 class_no: parseInt(document.getElementById('m_no').value),
                 name_zh: document.getElementById('m_name_zh').value.trim(),
                 name_en: document.getElementById('m_name_en').value.trim(),
@@ -467,6 +508,7 @@
             };
 
             try {
+                // { merge: true } 會自動處理：如果資料存在就更新，不存在就新增
                 await setDoc(doc(db, "students", `${year}_${regNo}`), studentData, { merge: true });
                 closeModal();
             } catch (error) {

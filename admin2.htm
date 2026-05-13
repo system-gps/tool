@@ -3,388 +3,476 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Grandmont 學生管理系統</title>
-    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+    <title>學生資料管理後台</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f0f2f5; padding: 20px; color: #333; }
-        .container { max-width: 1000px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-        h2 { border-bottom: 2px solid #eee; padding-bottom: 10px; margin-top: 0; }
+        .sort-icon::after { content: ' ↕'; opacity: 0.3; font-size: 0.8em; }
+        .sort-active::after { opacity: 1; color: #2563eb; }
+        .sort-asc::after { content: ' ↑'; }
+        .sort-desc::after { content: ' ↓'; }
         
-        /* 狀態列 */
-        .status-bar { padding: 10px 15px; margin-bottom: 20px; border-radius: 6px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
-        .online { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
-        .offline { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
-        
-        /* 按鈕與表單 */
-        button { border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; color: white; transition: 0.2s; font-size: 14px; }
-        button:disabled { background: #ccc !important; cursor: not-allowed; }
-        .btn-blue { background: #007bff; } .btn-blue:hover { background: #0056b3; }
-        .btn-gray { background: #6c757d; } .btn-gray:hover { background: #5a6268; }
-        .btn-green { background: #28a745; } .btn-green:hover { background: #218838; }
-        .btn-red { background: #dc3545; } .btn-red:hover { background: #c82333; }
-        input, select { padding: 8px; border: 1px solid #ccc; border-radius: 4px; }
-        
-        /* 管理員區塊與匯出區塊 */
-        .admin-panel, .export-panel { background: #f8f9fa; border: 1px solid #ddd; padding: 15px; border-radius: 6px; margin-bottom: 20px; display: none; }
-        .admin-panel h4, .export-panel h4 { margin-top: 0; color: #495057; }
-        
-        /* 資料表 */
-        .table-controls { display: flex; justify-content: space-between; margin-bottom: 10px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-        th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
-        th { background: #f4f4f4; cursor: pointer; }
-        th:hover { background: #e9ecef; }
-        tr:nth-child(even) { background: #f9f9f9; }
-        tr:hover { background: #f1f1f1; }
-        
-        /* 匯出欄位設定 */
-        .field-item { display: inline-flex; align-items: center; margin-right: 15px; margin-bottom: 10px; background: #fff; padding: 5px 10px; border: 1px solid #ccc; border-radius: 4px;}
-        .field-item input[type="number"] { width: 40px; margin-left: 5px; padding: 2px; text-align: center;}
+        /* 預設隱藏主畫面與登入畫面，由 JS 控制顯示 */
+        #main-app { display: none; }
+        #login-screen { display: none; }
     </style>
 </head>
-<body>
+<body class="bg-gray-50 p-4">
 
-<div class="container">
-    <h2>🎓 Grandmont 學生管理系統</h2>
-    
-    <div id="authStatus" class="status-bar offline">
-        <span id="statusText">⏳ 正在確認登入狀態...</span>
-        <div>
-            <button class="btn-blue" onclick="login()">Google 登入</button>
-            <button class="btn-gray" onclick="logout()">登出</button>
+    <div id="login-screen" class="min-h-[90vh] flex flex-col items-center justify-center">
+        <div class="bg-white p-8 rounded-2xl shadow-lg w-full max-w-md text-center border border-gray-100">
+            <div class="text-5xl mb-6">🎓</div>
+            <h1 class="text-3xl font-bold text-gray-800 mb-2">學生管理系統</h1>
+            <p class="text-gray-500 mb-8 text-sm">請使用 @grandmont.edu.hk 帳號登入</p>
+            
+            <button onclick="loginWithGoogle()" class="w-full flex items-center justify-center gap-3 bg-white border border-gray-300 text-gray-700 px-6 py-3 rounded-xl hover:bg-gray-50 transition shadow-sm font-medium">
+                <img src="https://www.google.com/favicon.ico" alt="Google" class="w-5 h-5">
+                使用 Google 帳號登入
+            </button>
         </div>
     </div>
 
-    <div id="adminPanel" class="admin-panel">
-        <h4>⚙️ 管理員專區 (新增與大量上載)</h4>
+    <div id="main-app" class="max-w-[98%] mx-auto bg-white p-6 rounded-xl shadow-md">
         
-        <form id="studentForm" onsubmit="saveStudent(event)" style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 15px;">
-            <input type="hidden" id="docId">
-            <input type="text" id="sid" placeholder="學號 (必填)" required>
-            <input type="text" id="name" placeholder="姓名 (必填)" required>
-            <input type="text" id="className" placeholder="班別 (例: 1A)" required>
-            <select id="gender"><option value="男">男</option><option value="女">女</option></select>
-            <input type="email" id="email" placeholder="電子郵件">
-            <input type="text" id="remark" placeholder="備註">
-            <button type="submit" class="btn-blue" id="btnSave">新增學生</button>
-            <button type="button" class="btn-gray" onclick="resetForm()">清除表單</button>
-        </form>
-        
-        <div style="border-top: 1px dashed #ccc; padding-top: 10px;">
-            <span style="font-size: 14px; font-weight: bold;">大量匯入資料 (Excel/CSV): </span>
-            <input type="file" id="uploadFile" accept=".xlsx, .xls, .csv">
-            <button class="btn-green" onclick="handleBulkUpload()">上載並匯入資料庫</button>
-            <span style="font-size: 12px; color: #666;">(Excel 標題列需為：學號, 姓名, 班別, 性別, 電子郵件, 備註)</span>
-        </div>
-    </div>
-
-    <div id="exportPanel" class="export-panel">
-        <h4>📊 自選欄位匯出 Excel</h4>
-        <div id="columnSelector"></div>
-        <button class="btn-green" style="width: 100%; margin-top: 10px;" onclick="exportToExcel()">⬇️ 匯出資料表</button>
-    </div>
-
-    <div class="table-controls">
-        <input type="text" id="searchInput" placeholder="🔍 搜尋學號、姓名或班別..." onkeyup="filterTable()" style="width: 300px;">
-        <button class="btn-gray" onclick="toggleExportPanel()">顯示/隱藏匯出設定</button>
-    </div>
-
-    <table id="studentTable">
-        <thead>
-            <tr>
-                <th onclick="sortTable('sid')">學號 ↕</th>
-                <th onclick="sortTable('name')">姓名 ↕</th>
-                <th onclick="sortTable('className')">班別 ↕</th>
-                <th onclick="sortTable('gender')">性別 ↕</th>
-                <th onclick="sortTable('email')">電子郵件 ↕</th>
-                <th onclick="sortTable('remark')">備註</th>
-                <th id="thActions" style="display:none; width: 120px;">操作</th>
-            </tr>
-        </thead>
-        <tbody id="tableBody">
-            <tr><td colspan="7" style="text-align: center;">請先登入以載入資料</td></tr>
-        </tbody>
-    </table>
-</div>
-
-<script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-    import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-    import { getFirestore, collection, getDocs, doc, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-
-    const firebaseConfig = {
-        apiKey: "AIzaSyD56VzhRgVVUE4WrJuj2pf6OOAx6VrETjw",
-        authDomain: "school-quiz-system-cb6b7.firebaseapp.com",
-        projectId: "school-quiz-system-cb6b7",
-        storageBucket: "school-quiz-system-cb6b7.firebasestorage.app",
-        messagingSenderId: "333454596917",
-        appId: "1:333454596917:web:b9d7d80ff10e62c1238a7c"
-    };
-
-    const app = initializeApp(firebaseConfig);
-    const auth = getAuth(app);
-    const db = getFirestore(app);
-    const provider = new GoogleAuthProvider();
-
-    // 系統狀態
-    let isAdmin = false;
-    let studentsData = []; // 存放所有學生資料
-    let sortAsc = true;
-
-    // --- 介面初始化 (匯出欄位) ---
-    const availableFields = [
-        { id: 'sid', label: '學號' }, { id: 'name', label: '姓名' },
-        { id: 'className', label: '班別' }, { id: 'gender', label: '性別' },
-        { id: 'email', label: '電子郵件' }, { id: 'remark', label: '備註' }
-    ];
-    const selectorDiv = document.getElementById('columnSelector');
-    availableFields.forEach((f, index) => {
-        selectorDiv.innerHTML += `
-            <div class="field-item">
-                <input type="checkbox" id="chk_${f.id}" checked>
-                <label for="chk_${f.id}">${f.label}</label>
-                <input type="number" id="order_${f.id}" value="${index + 1}" min="1">
+        <div class="flex justify-between items-center mb-6 border-b pb-4">
+            <h1 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
+                <span>🎓 學生資料管理系統</span>
+                <span id="currentYearBadge" class="text-sm font-normal bg-blue-100 text-blue-700 px-2 py-1 rounded"></span>
+            </h1>
+            <div class="flex items-center gap-4">
+                <span id="currentUserEmail" class="text-sm text-gray-500 font-medium"></span>
+                <button onclick="logout()" class="bg-red-50 text-red-600 px-4 py-2 rounded-lg border border-red-200 hover:bg-red-100 transition shadow-sm">
+                    登出系統
+                </button>
             </div>
-        `;
-    });
+        </div>
 
-    // --- 身分驗證監聽 ---
-    onAuthStateChanged(auth, (user) => {
-        const statusText = document.getElementById('statusText');
-        const statusBar = document.getElementById('authStatus');
-        const adminPanel = document.getElementById('adminPanel');
-        const thActions = document.getElementById('thActions');
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            <div class="relative md:col-span-2">
+                <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-400">🔍</span>
+                <input type="text" id="searchInput" placeholder="搜尋姓名、註冊編號、電郵、班別..." 
+                       class="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
+            </div>
 
-        if (user) {
-            const email = user.email.toLowerCase();
-            // 判斷是否為管理員
-            isAdmin = (email === 'system@grandmont.edu.hk' || email === 'sktt@grandmont.edu.hk');
-            
-            statusText.innerText = `✅ 已登入: ${email} ${isAdmin ? '(管理員)' : '(檢視者)'}`;
-            statusBar.className = "status-bar online";
-            
-            // 根據權限顯示隱藏 UI
-            adminPanel.style.display = isAdmin ? "block" : "none";
-            thActions.style.display = isAdmin ? "table-cell" : "none";
-            
-            loadData(); // 登入後自動載入資料
-        } else {
-            statusText.innerText = "❌ 未登入 (請使用 @grandmont.edu.hk 帳號)";
-            statusBar.className = "status-bar offline";
-            adminPanel.style.display = "none";
-            thActions.style.display = "none";
-            document.getElementById('tableBody').innerHTML = '<tr><td colspan="7" style="text-align: center;">請先登入</td></tr>';
-        }
-    });
+            <div class="flex items-center gap-2">
+                <label class="whitespace-nowrap text-sm text-gray-600">學年：</label>
+                <select id="yearFilter" class="w-full border p-2 rounded-lg bg-white outline-none focus:border-blue-500"></select>
+            </div>
 
-    window.login = () => signInWithPopup(auth, provider).catch(e => alert("登入失敗: " + e.message));
-    window.logout = () => signOut(auth);
+            <div id="admin-controls" class="flex justify-end gap-2" style="display: none;">
+                <input type="file" id="csvInput" accept=".csv" class="hidden" onchange="handleCSVUpload(event)">
+                <button onclick="document.getElementById('csvInput').click()" class="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200 border transition">
+                    📂 批次上載 CSV
+                </button>
+                <button onclick="openModal()" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition shadow">
+                    ＋ 新增學生
+                </button>
+            </div>
+        </div>
 
-    // --- 資料庫操作 (讀取) ---
-    async function loadData() {
-        try {
-            document.getElementById('tableBody').innerHTML = '<tr><td colspan="7" style="text-align: center;">載入中...</td></tr>';
-            const querySnapshot = await getDocs(collection(db, "students"));
-            studentsData = [];
-            querySnapshot.forEach((doc) => {
-                studentsData.push({ docId: doc.id, ...doc.data() });
-            });
-            renderTable(studentsData);
-        } catch (error) {
-            console.error(error);
-            document.getElementById('tableBody').innerHTML = `<tr><td colspan="7" style="color:red;">載入失敗 (權限不足或錯誤): ${error.message}</td></tr>`;
-        }
-    }
+        <div class="bg-white border rounded-lg overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr class="text-gray-500 text-xs uppercase tracking-wider font-medium">
+                        <th onclick="setSort('class_name')" class="p-3 text-left cursor-pointer hover:bg-gray-100 sort-icon" id="th-class_name">班別</th>
+                        <th onclick="setSort('class_no')" class="p-3 text-left cursor-pointer hover:bg-gray-100 sort-icon" id="th-class_no">學號</th>
+                        <th onclick="setSort('name_zh')" class="p-3 text-left cursor-pointer hover:bg-gray-100 sort-icon" id="th-name_zh">中文姓名</th>
+                        <th onclick="setSort('name_en')" class="p-3 text-left cursor-pointer hover:bg-gray-100 sort-icon" id="th-name_en">英文姓名</th>
+                        <th class="p-3 text-left">性別</th>
+                        <th onclick="setSort('dob')" class="p-3 text-left cursor-pointer hover:bg-gray-100 sort-icon" id="th-dob">出生日期</th>
+                        <th onclick="setSort('reg_no')" class="p-3 text-left cursor-pointer hover:bg-gray-100 sort-icon" id="th-reg_no">註冊編號</th>
+                        <th onclick="setSort('email')" class="p-3 text-left cursor-pointer hover:bg-gray-100 sort-icon" id="th-email">電郵</th>
+                        <th class="p-3 text-center">操作</th>
+                    </tr>
+                </thead>
+                <tbody id="studentTableBody" class="divide-y divide-gray-100 text-sm">
+                    </tbody>
+            </table>
+        </div>
 
-    // --- 資料表渲染與篩選 ---
-    window.renderTable = (data) => {
-        const tbody = document.getElementById('tableBody');
-        tbody.innerHTML = "";
-        if(data.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="7" style="text-align: center;">目前沒有資料</td></tr>';
-            return;
-        }
-        data.forEach(s => {
-            let row = `<tr>
-                <td>${s.sid || ''}</td><td>${s.name || ''}</td><td>${s.className || ''}</td>
-                <td>${s.gender || ''}</td><td>${s.email || ''}</td><td>${s.remark || ''}</td>`;
-            if (isAdmin) {
-                row += `<td>
-                    <button class="btn-blue" style="padding:4px 8px" onclick='editStudent(${JSON.stringify(s)})'>編輯</button>
-                    <button class="btn-red" style="padding:4px 8px" onclick='deleteStudent("${s.docId}")'>刪除</button>
-                </td>`;
-            }
-            row += `</tr>`;
-            tbody.innerHTML += row;
-        });
-    };
+        <div class="mt-4 flex flex-col md:flex-row justify-between items-center gap-4 text-sm text-gray-500">
+            <div>共 <span id="totalRecords" class="font-bold text-blue-600">0</span> 筆紀錄</div>
+            <div class="flex items-center gap-4">
+                <select id="pageSize" class="border rounded p-1">
+                    <option value="20">20 筆/頁</option>
+                    <option value="50">50 筆/頁</option>
+                    <option value="100">100 筆/頁</option>
+                </select>
+                <div class="flex gap-2">
+                    <button onclick="changePage(-1)" id="prevBtn" class="px-3 py-1 border rounded hover:bg-gray-100 disabled:opacity-30">上一頁</button>
+                    <button onclick="changePage(1)" id="nextBtn" class="px-3 py-1 border rounded hover:bg-gray-100 disabled:opacity-30">下一頁</button>
+                </div>
+            </div>
+        </div>
+    </div>
 
-    window.filterTable = () => {
-        const keyword = document.getElementById('searchInput').value.toLowerCase();
-        const filtered = studentsData.filter(s => 
-            (s.sid && s.sid.toLowerCase().includes(keyword)) || 
-            (s.name && s.name.toLowerCase().includes(keyword)) ||
-            (s.className && s.className.toLowerCase().includes(keyword))
-        );
-        renderTable(filtered);
-    };
-
-    window.sortTable = (key) => {
-        sortAsc = !sortAsc;
-        studentsData.sort((a, b) => {
-            let valA = (a[key] || '').toString().toLowerCase();
-            let valB = (b[key] || '').toString().toLowerCase();
-            if (valA < valB) return sortAsc ? -1 : 1;
-            if (valA > valB) return sortAsc ? 1 : -1;
-            return 0;
-        });
-        filterTable(); // 排序後維持當前的搜尋條件
-    };
-
-    // --- 管理員功能 (單筆 新增/修改/刪除) ---
-    window.saveStudent = async (e) => {
-        e.preventDefault();
-        const docId = document.getElementById('docId').value;
-        const sid = document.getElementById('sid').value;
-        const studentObj = {
-            sid: sid,
-            name: document.getElementById('name').value,
-            className: document.getElementById('className').value,
-            gender: document.getElementById('gender').value,
-            email: document.getElementById('email').value,
-            remark: document.getElementById('remark').value
-        };
-
-        try {
-            // 如果沒有 docId，就使用學號 sid 作為 Firestore 的 document ID，避免重複
-            const targetId = docId ? docId : sid; 
-            await setDoc(doc(db, "students", targetId), studentObj);
-            alert(docId ? "修改成功！" : "新增成功！");
-            resetForm();
-            loadData();
-        } catch (error) {
-            alert("儲存失敗: " + error.message);
-        }
-    };
-
-    window.editStudent = (s) => {
-        document.getElementById('docId').value = s.docId;
-        document.getElementById('sid').value = s.sid || '';
-        document.getElementById('name').value = s.name || '';
-        document.getElementById('className').value = s.className || '';
-        document.getElementById('gender').value = s.gender || '男';
-        document.getElementById('email').value = s.email || '';
-        document.getElementById('remark').value = s.remark || '';
-        document.getElementById('btnSave').innerText = "儲存修改";
-        document.getElementById('sid').readOnly = true; // 學號不建議修改
-        window.scrollTo(0, 0); // 滾動回頂部
-    };
-
-    window.resetForm = () => {
-        document.getElementById('studentForm').reset();
-        document.getElementById('docId').value = "";
-        document.getElementById('btnSave').innerText = "新增學生";
-        document.getElementById('sid').readOnly = false;
-    };
-
-    window.deleteStudent = async (docId) => {
-        if (confirm("確定要刪除這筆學生資料嗎？此操作無法還原。")) {
-            try {
-                await deleteDoc(doc(db, "students", docId));
-                loadData();
-            } catch (error) { alert("刪除失敗: " + error.message); }
-        }
-    };
-
-    // --- 大量上載 (Bulk Upload) ---
-    window.handleBulkUpload = () => {
-        const fileInput = document.getElementById('uploadFile');
-        if (!fileInput.files.length) { alert("請先選擇 Excel 檔案！"); return; }
-        
-        const reader = new FileReader();
-        reader.onload = async (e) => {
-            try {
-                const data = new Uint8Array(e.target.result);
-                const workbook = XLSX.read(data, {type: 'array'});
-                const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-                const jsonData = XLSX.utils.sheet_to_json(firstSheet);
+    <div id="addModal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex justify-center items-center z-50">
+        <div class="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md relative">
+            <h2 class="text-xl font-bold mb-4 text-gray-800 border-b pb-2">新增/更新學生紀錄</h2>
+            <form id="addForm" class="space-y-4">
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600">學年 *</label>
+                        <input type="text" id="m_year" required class="w-full border p-2 rounded focus:ring focus:ring-blue-200 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600">註冊編號 *</label>
+                        <input type="text" id="m_reg_no" required class="w-full border p-2 rounded focus:ring focus:ring-blue-200 outline-none">
+                    </div>
+                </div>
                 
-                if (jsonData.length === 0) { alert("檔案為空！"); return; }
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600">班別 *</label>
+                        <input type="text" id="m_class" required placeholder="如: 1A" class="w-full border p-2 rounded focus:ring focus:ring-blue-200 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600">學號 *</label>
+                        <input type="number" id="m_no" required class="w-full border p-2 rounded focus:ring focus:ring-blue-200 outline-none">
+                    </div>
+                </div>
 
-                // 批次寫入 Firebase (使用學號作為 ID)
-                let successCount = 0;
-                for (let row of jsonData) {
-                    const sid = row['學號'] || row['sid'] || row['ID'];
-                    if (!sid) continue; // 跳過沒有學號的行
-                    
-                    const studentObj = {
-                        sid: String(sid),
-                        name: row['姓名'] || row['name'] || '',
-                        className: row['班別'] || row['class'] || '',
-                        gender: row['性別'] || row['gender'] || '',
-                        email: row['電子郵件'] || row['email'] || '',
-                        remark: row['備註'] || row['remark'] || ''
-                    };
-                    // 使用 setDoc，如果學號已存在會自動更新 (覆蓋)
-                    await setDoc(doc(db, "students", String(sid)), studentObj);
-                    successCount++;
-                }
-                alert(`匯入完成！成功匯入/更新 ${successCount} 筆資料。`);
-                fileInput.value = ""; // 清空選擇
-                loadData();
-            } catch (error) {
-                alert("解析檔案錯誤: " + error.message);
-            }
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600">中文姓名 *</label>
+                        <input type="text" id="m_name_zh" required class="w-full border p-2 rounded focus:ring focus:ring-blue-200 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600">英文姓名</label>
+                        <input type="text" id="m_name_en" class="w-full border p-2 rounded focus:ring focus:ring-blue-200 outline-none">
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600">性別</label>
+                        <select id="m_gender" class="w-full border p-2 rounded focus:ring focus:ring-blue-200 outline-none">
+                            <option value="">請選擇</option>
+                            <option value="M">男 (M)</option>
+                            <option value="F">女 (F)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600">出生日期</label>
+                        <input type="text" id="m_dob" placeholder="YYYY-MM-DD" class="w-full border p-2 rounded focus:ring focus:ring-blue-200 outline-none">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-medium text-gray-600">電郵</label>
+                    <input type="email" id="m_email" class="w-full border p-2 rounded focus:ring focus:ring-blue-200 outline-none">
+                </div>
+
+                <div class="flex justify-end gap-3 mt-6 pt-4 border-t">
+                    <button type="button" onclick="closeModal()" class="px-4 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition">取消</button>
+                    <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition">儲存資料</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getFirestore, collection, query, where, doc, deleteDoc, setDoc, writeBatch, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyD56VzhRgVVUE4WrJuj2pf6OOAx6VrETjw",
+            authDomain: "school-quiz-system-cb6b7.firebaseapp.com",
+            projectId: "school-quiz-system-cb6b7",
+            storageBucket: "school-quiz-system-cb6b7.firebasestorage.app",
+            messagingSenderId: "333454596917",
+            appId: "1:333454596917:web:b9d7d80ff10e62c1238a7c"
         };
-        reader.readAsArrayBuffer(fileInput.files[0]);
-    };
 
-    // --- Excel 匯出功能 (包含自訂欄位與排序) ---
-    window.toggleExportPanel = () => {
-        const panel = document.getElementById('exportPanel');
-        panel.style.display = panel.style.display === "block" ? "none" : "block";
-    };
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+        const provider = new GoogleAuthProvider();
 
-    window.exportToExcel = () => {
-        if (studentsData.length === 0) { alert("目前沒有資料可以匯出"); return; }
+        // ==========================================
+        // 🔒 1. 權限與白名單設定 (核心修改區域)
+        // ==========================================
+        const ALLOWED_DOMAIN = "@grandmont.edu.hk"; // 允許讀取的網域
+        const ADMIN_EMAILS = [
+            "system@grandmont.edu.hk", 
+            "sktt@grandmont.edu.hk"
+        ];
         
-        // 抓取設定
-        let selectedFields = availableFields
-            .filter(f => document.getElementById(`chk_${f.id}`).checked)
-            .map(f => ({
-                id: f.id,
-                label: f.label,
-                order: parseInt(document.getElementById(`order_${f.id}`).value) || 99
-            }))
-            .sort((a, b) => a.order - b.order);
+        let currentUserRole = "VIEWER"; // 預設身分為檢視者
 
-        if (selectedFields.length === 0) { alert("請至少勾選一個欄位！"); return; }
-
-        // 重組資料
-        const keyword = document.getElementById('searchInput').value.toLowerCase();
-        // 只匯出「目前畫面上篩選出」的資料
-        const targetData = studentsData.filter(s => 
-            (s.sid && s.sid.toLowerCase().includes(keyword)) || 
-            (s.name && s.name.toLowerCase().includes(keyword)) ||
-            (s.className && s.className.toLowerCase().includes(keyword))
-        );
-
-        const excelRows = targetData.map(student => {
-            let row = {};
-            selectedFields.forEach(field => {
-                row[field.label] = student[field.id] || '';
+        window.loginWithGoogle = () => {
+            signInWithPopup(auth, provider).catch(err => {
+                console.error("登入失敗", err);
             });
-            return row;
+        };
+
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                // 第一關：檢查是否為學校網域
+                if (user.email.endsWith(ALLOWED_DOMAIN)) {
+                    
+                    // 第二關：檢查是否為最高權限管理員
+                    if (ADMIN_EMAILS.includes(user.email)) {
+                        currentUserRole = "ADMIN";
+                        document.getElementById('admin-controls').style.display = 'flex'; // 顯示管理按鈕
+                    } else {
+                        currentUserRole = "VIEWER";
+                        document.getElementById('admin-controls').style.display = 'none'; // 隱藏管理按鈕
+                    }
+
+                    // 更新 UI 介面
+                    document.getElementById('login-screen').style.display = 'none';
+                    document.getElementById('main-app').style.display = 'block';
+                    
+                    const roleText = currentUserRole === 'ADMIN' ? '超級管理員' : '教職員';
+                    document.getElementById('currentUserEmail').innerText = `${roleText}：${user.email}`;
+                    
+                    startListening();
+                } else {
+                    // 非學校網域
+                    alert(`登入失敗：只允許 ${ALLOWED_DOMAIN} 的學校帳號使用此系統。`);
+                    signOut(auth);
+                }
+            } else {
+                // 未登入狀態
+                document.getElementById('login-screen').style.display = 'flex';
+                document.getElementById('main-app').style.display = 'none';
+                document.getElementById('admin-controls').style.display = 'none';
+            }
         });
 
-        // 產生檔案
-        const worksheet = XLSX.utils.json_to_sheet(excelRows);
-        const workbook = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(workbook, worksheet, "學生名單");
-        const dateStr = new Date().toISOString().slice(0,10).replace(/-/g, "");
-        XLSX.writeFile(workbook, `Grandmont_Students_${dateStr}.xlsx`);
-    };
-</script>
+        window.logout = () => {
+            signOut(auth).then(() => location.reload());
+        };
 
+        // ==========================================
+        // 📅 2. 學年與 UI 初始化
+        // ==========================================
+        function getAutoAcademicYear() {
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = now.getMonth() + 1;
+            return (month >= 9) ? `${year}-${year + 1}` : `${year - 1}-${year}`;
+        }
+        const defaultYear = getAutoAcademicYear();
+        const yearSelect = document.getElementById('yearFilter');
+        const startYear = parseInt(defaultYear.split('-')[0]) - 1;
+        for(let i=0; i<4; i++) {
+            const yStr = `${startYear+i}-${startYear+i+1}`;
+            const opt = new Option(yStr, yStr);
+            if(yStr === defaultYear) opt.selected = true;
+            yearSelect.add(opt);
+        }
+        document.getElementById('currentYearBadge').innerText = `預設學年: ${defaultYear}`;
+
+        // ==========================================
+        // 📊 3. 資料獲取與過濾邏輯
+        // ==========================================
+        let allStudents = [];
+        let filteredStudents = [];
+        let currentSort = { key: 'class_name', dir: 'asc' };
+        let currentPage = 1;
+        let pageSize = 20;
+
+        function startListening() {
+            const q = query(collection(db, "students"), where("academic_year", "==", yearSelect.value));
+            onSnapshot(q, (snapshot) => {
+                allStudents = snapshot.docs.map(doc => doc.data());
+                applyAllFilters();
+            }, (error) => {
+                console.error("讀取資料失敗，請確認 Firestore Rules 設定是否正確", error);
+            });
+        }
+
+        function applyAllFilters() {
+            const term = document.getElementById('searchInput').value.trim().toLowerCase();
+            
+            filteredStudents = allStudents.filter(s => {
+                if (!term) return true;
+                const nameZh = (s.name_zh || "").toString().toLowerCase();
+                const nameEn = (s.name_en || "").toString().toLowerCase();
+                const regNo  = (s.reg_no || "").toString().toLowerCase();
+                const email  = (s.email || "").toString().toLowerCase();
+                const className = (s.class_name || "").toString().toLowerCase();
+                return nameZh.includes(term) || nameEn.includes(term) || regNo.includes(term) || email.includes(term) || className.includes(term);
+            });
+
+            filteredStudents.sort((a, b) => {
+                let result = 0;
+                const key = currentSort.key;
+
+                if (key === 'class_name' || key === 'class_no') {
+                    result = (a.class_name || "").localeCompare(b.class_name || "");
+                    if (result === 0) result = (parseInt(a.class_no) || 0) - (parseInt(b.class_no) || 0);
+                } else {
+                    let valA = a[key] || ""; let valB = b[key] || "";
+                    if (typeof valA === 'string') valA = valA.toLowerCase();
+                    if (typeof valB === 'string') valB = valB.toLowerCase();
+                    if (valA < valB) result = -1; else if (valA > valB) result = 1;
+
+                    if (result === 0) {
+                        result = (a.class_name || "").localeCompare(b.class_name || "");
+                        if (result === 0) result = (parseInt(a.class_no) || 0) - (parseInt(b.class_no) || 0);
+                    }
+                }
+                return currentSort.dir === 'asc' ? result : result * -1;
+            });
+            renderTable();
+        }
+
+        function renderTable() {
+            const total = filteredStudents.length;
+            const start = (currentPage - 1) * pageSize;
+            const pageData = filteredStudents.slice(start, start + pageSize);
+
+            const tbody = document.getElementById('studentTableBody');
+            tbody.innerHTML = pageData.map(s => `
+                <tr class="hover:bg-blue-50 border-b border-gray-100">
+                    <td class="p-3 font-bold text-blue-800">${s.class_name}</td>
+                    <td class="p-3">${s.class_no}</td>
+                    <td class="p-3 font-medium text-gray-900">${s.name_zh}</td>
+                    <td class="p-3 text-gray-600">${s.name_en || '-'}</td>
+                    <td class="p-3">${s.gender || '-'}</td>
+                    <td class="p-3 text-xs text-gray-500">${s.dob || '-'}</td>
+                    <td class="p-3 text-xs">${s.reg_no}</td>
+                    <td class="p-3 text-xs text-blue-600">${s.email || '-'}</td>
+                    <td class="p-3 text-center">
+                        ${currentUserRole === 'ADMIN' ? 
+                          `<button onclick="deleteStudent('${s.academic_year}', '${s.reg_no}')" class="text-red-400 hover:text-red-600 transition">刪除</button>` : 
+                          `<span class="text-gray-300 cursor-not-allowed">無權限</span>`
+                        }
+                    </td>
+                </tr>
+            `).join('');
+
+            document.getElementById('totalRecords').innerText = total;
+            document.getElementById('prevBtn').disabled = currentPage === 1;
+            document.getElementById('nextBtn').disabled = start + pageSize >= total;
+
+            document.querySelectorAll('th').forEach(th => th.className = th.className.replace('sort-active sort-asc sort-desc', ''));
+            const th = document.getElementById(`th-${currentSort.key}`);
+            if(th) { th.classList.add('sort-active'); th.classList.add(currentSort.dir === 'asc' ? 'sort-asc' : 'sort-desc'); }
+        }
+
+        // ==========================================
+        // 🕹️ 4. 交互與操作功能
+        // ==========================================
+        window.setSort = (key) => {
+            currentSort.dir = (currentSort.key === key && currentSort.dir === 'asc') ? 'desc' : 'asc';
+            currentSort.key = key;
+            applyAllFilters();
+        };
+
+        window.changePage = (offset) => { currentPage += offset; renderTable(); };
+        document.getElementById('searchInput').oninput = () => { currentPage = 1; applyAllFilters(); };
+        yearSelect.onchange = () => { currentPage = 1; startListening(); };
+        document.getElementById('pageSize').onchange = (e) => { pageSize = parseInt(e.target.value); currentPage = 1; renderTable(); };
+
+        window.deleteStudent = async (year, regNo) => {
+            if (currentUserRole !== 'ADMIN') return alert('權限不足');
+            if (confirm(`確定刪除註冊編號 ${regNo} 的紀錄？`)) {
+                try { await deleteDoc(doc(db, "students", `${year}_${regNo}`)); } 
+                catch(e) { alert("刪除失敗，請檢查權限"); }
+            }
+        };
+
+        // ==========================================
+        // 🚀 5. 批次上載與 Modal 邏輯
+        // ==========================================
+        window.handleCSVUpload = async (event) => {
+            if (currentUserRole !== 'ADMIN') return alert('權限不足');
+            const file = event.target.files[0];
+            if (!file) return;
+
+            Papa.parse(file, {
+                header: true,
+                skipEmptyLines: true,
+                transformHeader: (h) => h.trim(),
+                complete: async function(results) {
+                    const data = results.data;
+                    const requiredFields = ['學年', '註冊編號', '班別', '學號', '中文姓名'];
+
+                    for (let row of data) {
+                        for (let key in row) if (typeof row[key] === 'string') row[key] = row[key].trim();
+                        for (let field of requiredFields) {
+                            if (!row[field]) {
+                                alert(`❌ 驗證失敗：缺少必填欄位 [${field}] (註冊編號: ${row['註冊編號'] || '未知'})。上傳終止。`);
+                                document.getElementById('csvInput').value = ''; 
+                                return;
+                            }
+                        }
+                    }
+
+                    if (confirm(`✅ 即將上傳/更新 ${data.length} 筆資料，確定執行嗎？`)) {
+                        try {
+                            for (let i = 0; i < data.length; i += 400) {
+                                const chunk = data.slice(i, i + 400);
+                                const batch = writeBatch(db);
+                                
+                                chunk.forEach(s => {
+                                    const docRef = doc(db, "students", `${s['學年']}_${s['註冊編號']}`);
+                                    batch.set(docRef, {
+                                        academic_year: s['學年'],
+                                        reg_no: s['註冊編號'],
+                                        class_name: s['班別'],
+                                        class_no: parseInt(s['學號']) || 0,
+                                        name_zh: s['中文姓名'],
+                                        name_en: s['英文姓名'] || "",
+                                        gender: s['性別'] || "",
+                                        dob: s['出生日期'] || "",
+                                        email: s['電郵'] ? s['電郵'].toLowerCase() : "",
+                                        updated_at: new Date()
+                                    }, { merge: true });
+                                });
+                                await batch.commit();
+                            }
+                            alert("🎉 批次更新成功！");
+                        } catch (error) {
+                            alert("❌ 上傳失敗：" + error.message);
+                        }
+                    }
+                    document.getElementById('csvInput').value = ''; 
+                }
+            });
+        };
+
+        window.openModal = () => {
+            if (currentUserRole !== 'ADMIN') return alert('權限不足');
+            document.getElementById('m_year').value = yearSelect.value;
+            document.getElementById('addModal').classList.remove('hidden');
+        };
+
+        window.closeModal = () => {
+            document.getElementById('addForm').reset();
+            document.getElementById('addModal').classList.add('hidden');
+        };
+
+        document.getElementById('addForm').onsubmit = async (e) => {
+            e.preventDefault();
+            if (currentUserRole !== 'ADMIN') return alert('權限不足');
+            const year = document.getElementById('m_year').value.trim();
+            const regNo = document.getElementById('m_reg_no').value.trim();
+            const studentData = {
+                academic_year: year,
+                reg_no: regNo,
+                class_name: document.getElementById('m_class').value.trim(),
+                class_no: parseInt(document.getElementById('m_no').value),
+                name_zh: document.getElementById('m_name_zh').value.trim(),
+                name_en: document.getElementById('m_name_en').value.trim(),
+                gender: document.getElementById('m_gender').value,
+                dob: document.getElementById('m_dob').value.trim(),
+                email: document.getElementById('m_email').value.trim().toLowerCase(),
+                updated_at: new Date()
+            };
+
+            try {
+                await setDoc(doc(db, "students", `${year}_${regNo}`), studentData, { merge: true });
+                closeModal();
+            } catch (error) {
+                alert("❌ 儲存失敗: " + error.message);
+            }
+        };
+    </script>
 </body>
 </html>
